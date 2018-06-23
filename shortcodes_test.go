@@ -1,6 +1,6 @@
 package shortcodes
 
-import(
+import (
 	"testing"
 	"fmt"
 )
@@ -12,7 +12,7 @@ var testingFunctions = map[string]callbackFunc{
 	"delete_me": func(args Args) string {
 		return ""
 	},
-	"inject_me":func (args Args) string {
+	"inject_me": func(args Args) string {
 		injector, ok := args["injector"]
 		if !ok {
 			injector = "missing"
@@ -46,15 +46,41 @@ func TestCannotAddMultipleFunctionsWithTheSameName(t *testing.T) {
 	}
 }
 
+func TestNestedTagsCorrectlyCompile(t *testing.T) {
+	shortcodes := New()
+	sayHello := func(args Args) string { return "Hello " + args["content"] }
+	sayName := func (args Args) string { return args["name"]}
+	shortcodes.Register("say_hello", sayHello)
+	shortcodes.Register("say_name", sayName)
+	text := "[say_hello][say_name name=\"Andy\"][/say_name][/say_hello]"
+	expected := "Hello Andy"
+	processed := shortcodes.Parse2(text)
+	if processed != expected {
+		t.Errorf("Nested shortcodes using text:\n%s\nExpected:\n%s\nGot:\n%s\n", text, expected, processed)
+	}
+}
+
+func TestNonMatchingOpeningAndClosingTagsFailToCompile(t *testing.T) {
+	shortcodes := New()
+	basicFunc := func(args Args) string { return "" }
+	shortcodes.Register("basic_func", basicFunc)
+	text := "This text should remain [basic_func]unchanged[/basic_fun]"
+	expected := "This text should remain unchanged[/basic_fun]"
+	processed := shortcodes.Parse2(text)
+	if processed != expected {
+		t.Errorf("non matching tags using text:\n%s\nreturned:\n%s\nshould have returned:\n%s", text, processed, expected)
+	}
+}
+
 func TestCannotAddShortcodesWithIncorrectNames(t *testing.T) {
 	shortcodes := New()
-	basicFunc := func(args Args) string {return ""}
+	basicFunc := func(args Args) string { return "" }
 	tests := map[string]callbackFunc{
-		"with space": basicFunc,
+		"with space":  basicFunc,
 		"Captialised": basicFunc,
-		"hy-phens": basicFunc,
-		"$#%%%": basicFunc,
-		"": basicFunc,
+		"hy-phens":    basicFunc,
+		"$#%%%":       basicFunc,
+		"":            basicFunc,
 	}
 
 	for name, callback := range tests {
@@ -70,7 +96,7 @@ func TestSimpleShortcodeRegex(t *testing.T) {
 	sc.Register("make_bold", testingFunctions["make_bold"])
 	sc.Register("delete_me", testingFunctions["delete_me"])
 	sc.Register("function_name_that_doesnt_exist", testingFunctions["delete_me"])
-	formatted := sc.Parse(text)
+	formatted := sc.Parse2(text)
 	expected := "This is some text. <strong>This is some bold text</strong>, here is some "
 	if formatted != expected {
 		t.Errorf("make_bold function applied to text \n- %s\nwanted to get \n- %s\ninstead got\n- %s\n", text, expected, formatted)
@@ -81,9 +107,22 @@ func TestRegexWithArgs(t *testing.T) {
 	sc := New()
 	text := `calculate this sum [inject_me injector="5"][/inject_me] + [inject_me injector="5"][/inject_me] = [inject_me injector="10"][/inject_me]`
 	sc.Register("inject_me", testingFunctions["inject_me"])
-	formatted := sc.Parse(text)
+	formatted := sc.Parse2(text)
 	expected := `calculate this sum 5 + 5 = 10`
 	if formatted != expected {
 		t.Errorf("inject_me function applied to text \n- %s\n wanted to get\n- %s\nInstead got\n- %s\n", text, expected, formatted)
+	}
+}
+
+func TestSelfClosingTag(t *testing.T) {
+	sc := New()
+	basicFunc := func(args Args) string { return args["insert"] }
+	sc.Register("replace", basicFunc)
+	sc.Register("bold", testingFunctions["make_bold"])
+	text := "[bold]Hi my name is [replace insert=\"andy\"/] and I like [replace insert=\"cheese\"/][/bold]"
+	expected := "<strong>Hi my name is andy and I like cheese</strong>"
+	formatted := sc.Parse2(text)
+	if formatted != expected {
+		t.Errorf("self closing tag applied to:\n%s\nWanted:\n%s\nGot: \n%s\n", text, expected, formatted)
 	}
 }
